@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 #[derive(Debug)]
 enum BencodeValue {
     Int(i64),
@@ -53,9 +54,30 @@ fn listiparser(input: &[u8]) -> Result<(Vec<BencodeValue>, usize), String> {
         position += consumed;
     }
 
-    // position is now sitting on the 'e' — include it in total consumed
+    // including the left out e
     Ok((items, position + 1))
 }
+
+fn distiparser(input: &[u8]) -> Result<(Vec<(Vec<u8>, BencodeValue)>, usize), String> {
+    let mut position = 1; // skip the leading 'd'
+    let mut items = Vec::new();
+
+    while input[position] != b'e' {
+        // every value or sumn must be a string
+        let (key, consumed_key) = stringiparser(&input[position..])?;
+        position += consumed_key;
+
+        // key must have value after it right? right? right? right? right? right? right? right? 
+        let (value, consumed_val) = parsdat(&input[position..])?;
+        position += consumed_val;
+
+        items.push((key, value));
+    }
+
+    Ok((items, position + 1))
+}
+
+
 
 fn parsdat(input: &[u8]) -> Result<(BencodeValue, usize), String> {
     match input.first() {
@@ -71,6 +93,10 @@ fn parsdat(input: &[u8]) -> Result<(BencodeValue, usize), String> {
             let (value, consumed) = stringiparser(input)?;
             Ok((BencodeValue::Bytes(value), consumed))
         }
+        Some(b'd') =>{
+            let (value, consumed) = distiparser(input)?;
+            Ok((BencodeValue::Dict(value), consumed))
+        }
         _ => Err("unknown or unsupported bencode type".to_string()),
     }
 }
@@ -78,9 +104,15 @@ fn main() {
     let result = intiparser(b"i42e");
     println!("{:?}", result);//i wonder
 
-    let otherResult = stringiparser(b"4:spam");
-    println!("{:?}", otherResult);
+    let other_result = stringiparser(b"4:spam");
+    println!("{:?}", other_result);
 
     let anotherotherresult = listiparser(b"l4:spami42ee");
     println!("{:?}", anotherotherresult);
+
+    let anotherotherresulter = distiparser(b"d3:cow3:moo4:spam4:eggs6:numberi42ee");
+    println!("{:?}", anotherotherresulter);
+
+ let torrent = parsdat(br#"d8:announce41:http://bttracker.debian.org:6969/announce7:comment35:"Debian CD from cdimage.debian.org"13:creation datei1690028920e4:infod6:lengthi657457152e4:name31:debian-12.1.0-amd64-netinst.iso12:piece lengthi262144e6:pieces20:12345678901234567890ee"#);
+    println!("{:?}", torrent)
 }
