@@ -6,6 +6,64 @@ enum BencodeValue {
     List(Vec<BencodeValue>),
     Dict(Vec<(Vec<u8>, BencodeValue)>),
 }
+#[derive(Debug)]
+struct TorrentMetainfo {
+    announce: String,
+    name: String,
+    piece_length: i64,
+    pieces: Vec<u8>,
+    length: i64,
+}
+
+fn get_dict_value<'a>(dict: &'a [(Vec<u8>, BencodeValue)], key: &str) -> Option<&'a BencodeValue> {
+    dict.iter()
+        .find(|(k, _)| k == key.as_bytes())
+        .map(|(_, v)| v)
+}
+
+fn parse_torrent(value: &BencodeValue) -> Result<TorrentMetainfo, String> {
+    let BencodeValue::Dict(top) = value else {
+        return Err("gimme a dictionary in the top level fucking dumdum".to_string());
+    };
+
+    let announce = match get_dict_value(top, "announce") {
+        Some(BencodeValue::Bytes(b)) => String::from_utf8_lossy(b).to_string(),
+        _ => return Err("i aint see no announce. or that shi might be ass'".to_string()),
+    };
+
+    let BencodeValue::Dict(info) = get_dict_value(top, "info")
+        .ok_or("no info in this dictionary".to_string())? else {
+        return Err("no info. dumbass".to_string());
+    };
+
+    let name = match get_dict_value(info, "name") {
+        Some(BencodeValue::Bytes(b)) => String::from_utf8_lossy(b).to_string(),
+        _ => return Err("aint no way you didnt gimme a name, dumbass'".to_string()),
+    };
+
+    let piece_length = match get_dict_value(info, "piece length") {
+        Some(BencodeValue::Int(n)) => *n,
+        _ => return Err("no piece length *boowomp*'".to_string()),
+    };
+
+    let pieces = match get_dict_value(info, "pieces") {
+        Some(BencodeValue::Bytes(b)) => b.clone(),
+        _ => return Err("no 'pieces' my homie".to_string()),
+    };
+
+    let length = match get_dict_value(info, "length") {
+        Some(BencodeValue::Int(n)) => *n,
+        _ => return Err("no 'length'".to_string()),
+    };
+
+    Ok(TorrentMetainfo { announce, name, piece_length, pieces, length })
+}
+
+
+fn infoget(input: [&u8]) ->
+
+
+
 
 fn intiparser(input: &[u8]) -> Result<(i64, usize), String> {
     //to see if that is parsable or not 
@@ -97,22 +155,12 @@ fn parsdat(input: &[u8]) -> Result<(BencodeValue, usize), String> {
             let (value, consumed) = distiparser(input)?;
             Ok((BencodeValue::Dict(value), consumed))
         }
-        _ => Err("unknown or unsupported bencode type".to_string()),
+        _ => Err("unknown or unsupported bencode type, dumbass".to_string()),
     }
 }
 fn main() {
-    let result = intiparser(b"i42e");
-    println!("{:?}", result);//i wonder
-
-    let other_result = stringiparser(b"4:spam");
-    println!("{:?}", other_result);
-
-    let anotherotherresult = listiparser(b"l4:spami42ee");
-    println!("{:?}", anotherotherresult);
-
-    let anotherotherresulter = distiparser(b"d3:cow3:moo4:spam4:eggs6:numberi42ee");
-    println!("{:?}", anotherotherresulter);
-
- let torrent = parsdat(br#"d8:announce41:http://bttracker.debian.org:6969/announce7:comment35:"Debian CD from cdimage.debian.org"13:creation datei1690028920e4:infod6:lengthi657457152e4:name31:debian-12.1.0-amd64-netinst.iso12:piece lengthi262144e6:pieces20:12345678901234567890ee"#);
-    println!("{:?}", torrent)
+ let bytes = std::fs::read("test.torrent").expect("failed to read file");
+    let (parsed, _) = parsdat(&bytes).expect("failed to parse torrent");
+    let torrent = parse_torrent(&parsed).expect("failed to extract torrent metadata");
+    println!("{:#?}", torrent); // {:#?} = pretty-printed debug output
 }
