@@ -15,43 +15,43 @@ struct TorrentMetainfo {
     length: i64,
 }
 
-fn get_dict_value<'a>(dict: &'a [(Vec<u8>, BencodeValue)], key: &str) -> Option<&'a BencodeValue> {
+fn get_eldict_value<'a>(dict: &'a [(Vec<u8>, BencodeValue)], key: &str) -> Option<&'a BencodeValue> {
     dict.iter()
         .find(|(k, _)| k == key.as_bytes())
         .map(|(_, v)| v)
 }
 
-fn parse_torrent(value: &BencodeValue) -> Result<TorrentMetainfo, String> {
+fn parse_eltorrento(value: &BencodeValue) -> Result<TorrentMetainfo, String> {
     let BencodeValue::Dict(top) = value else {
         return Err("gimme a dictionary in the top level fucking dumdum".to_string());
     };
 
-    let announce = match get_dict_value(top, "announce") {
+    let announce = match get_eldict_value(top, "announce") {
         Some(BencodeValue::Bytes(b)) => String::from_utf8_lossy(b).to_string(),
         _ => return Err("i aint see no announce. or that shi might be ass'".to_string()),
     };
 
-    let BencodeValue::Dict(info) = get_dict_value(top, "info")
+    let BencodeValue::Dict(info) = get_eldict_value(top, "info")
         .ok_or("no info in this dictionary".to_string())? else {
         return Err("no info. dumbass".to_string());
     };
 
-    let name = match get_dict_value(info, "name") {
+    let name = match get_eldict_value(info, "name") {
         Some(BencodeValue::Bytes(b)) => String::from_utf8_lossy(b).to_string(),
         _ => return Err("aint no way you didnt gimme a name, dumbass'".to_string()),
     };
 
-    let piece_length = match get_dict_value(info, "piece length") {
+    let piece_length = match get_eldict_value(info, "piece length") {
         Some(BencodeValue::Int(n)) => *n,
         _ => return Err("no piece length *boowomp*'".to_string()),
     };
 
-    let pieces = match get_dict_value(info, "pieces") {
+    let pieces = match get_eldict_value(info, "pieces") {
         Some(BencodeValue::Bytes(b)) => b.clone(),
         _ => return Err("no 'pieces' my homie".to_string()),
     };
 
-    let length = match get_dict_value(info, "length") {
+    let length = match get_eldict_value(info, "length") {
         Some(BencodeValue::Int(n)) => *n,
         _ => return Err("no 'length'".to_string()),
     };
@@ -60,7 +60,31 @@ fn parse_torrent(value: &BencodeValue) -> Result<TorrentMetainfo, String> {
 }
 
 
-fn infoget(input: [&u8]) ->
+
+fn infoget(input: &[u8]) -> Result<(Vec<u8>, usize), String> {
+    let mut position = 1 ;// we still skipping the big d bro 
+    let mut items = Vec::new();
+    while input[position] != b'e' {
+        let (key, consumed_key) = stringiparser(&input[position..])?;
+        position += consumed_key;
+
+        if key == b"info" {
+        let info_start = position;
+        let (_, consumed_val) = parsdat(&input[position..])?;
+        let info_end = info_start + consumed_val;
+        return Ok((input[info_start..info_end].to_vec(), consumed_key));
+        } else {
+        let (value, consumed_val) = parsdat(&input[position..])?;
+        position += consumed_val;
+
+        items.push((key, value));
+        }
+    }
+    Err("couldnt find el big info".to_string())
+
+}
+
+
 
 
 
@@ -159,8 +183,9 @@ fn parsdat(input: &[u8]) -> Result<(BencodeValue, usize), String> {
     }
 }
 fn main() {
- let bytes = std::fs::read("test.torrent").expect("failed to read file");
-    let (parsed, _) = parsdat(&bytes).expect("failed to parse torrent");
-    let torrent = parse_torrent(&parsed).expect("failed to extract torrent metadata");
-    println!("{:#?}", torrent); // {:#?} = pretty-printed debug output
+    let bytes = std::fs::read("test.torrent").expect("failed to read file");
+
+    let info_bytes = infoget(&bytes).expect("couldn't find info dict");
+
+    println!("info bytes length: {}", info_bytes.0.len());
 }
