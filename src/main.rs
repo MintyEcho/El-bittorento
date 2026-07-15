@@ -1,3 +1,5 @@
+//  use hex_literal::hex;
+use sha1::{Sha1, Digest};
 #[allow(dead_code)]
 #[derive(Debug)]
 enum BencodeValue {
@@ -182,10 +184,24 @@ fn parsdat(input: &[u8]) -> Result<(BencodeValue, usize), String> {
         _ => Err("unknown or unsupported bencode type, dumbass".to_string()),
     }
 }
+
+
+fn compute_dem_hash(input: &[u8]) -> [u8; 20]{
+    let mut hashment = Sha1::new();
+    hashment.update(input);
+    let hashed = hashment.finalize();
+    hashed.into()
+}
+
 fn main() {
     let bytes = std::fs::read("test.torrent").expect("failed to read file");
 
     let info_bytes = infoget(&bytes).expect("couldn't find info dict");
 
-    println!("info bytes length: {}", info_bytes.0.len());
+    let (bitos, consumedbitos) = info_bytes;
+
+    let hashed_info = compute_dem_hash(&bitos);
+
+    println!("check this hash!!: {}", hashed_info.iter().map(|b| format!("{:02x}", b)).collect::<String>());
+    // compute_dem_hash(&bytes);
 }
