@@ -4,10 +4,14 @@
 mod bencode;
 mod torrent;
 mod tracker;
-
+mod peer;
 use bencode::{BencodeValue, parsdat, get_eldict_value};
 use torrent::{TorrentMetainfo, parse_eltorrento, infoget, compute_dem_hash};
 use tracker::{urlencode_bytes, get_peers};
+use peer::{PeerMessage, build_handshake, read_message, send_message, build_elrequesto_payload};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+
 #[tokio::main]
 async fn main() ->  Result<(), Box<dyn std::error::Error>> {
 let bytes = std::fs::read("test.torrent").expect("failed to read file");
@@ -38,7 +42,55 @@ let url = format!(
 //because im vegeta
 let peers = get_peers(&url).await?;
 for (ip, port) in &peers {
-    println!("{}:{}", ip, port);
+    let addr_str = format!("{}:{}", ip, port);
+    println!("Trying peer: {addr_str}");
+
+    let mut stream = match TcpStream::connect(&addr_str).await {
+        Ok(s) => s,
+        Err(_) => continue,
+    };
+
+    let handshake = build_handshake(&hashed_info, peer_id);
+    if stream.write_all(&handshake).await.is_err() {
+        continue;
+    }
+
+    let mut response = [0u8; 68];
+    if stream.read_exact(&mut response).await.is_err() {
+        continue;
+    }
+
+    let peer_info_hash = &response[28..48];
+    if peer_info_hash != hashed_info {
+        eprintln!("Info hash mismatch! Dropping peer.");
+        continue;
+    }
+
+    println!("Handshake successful with {addr_str}!");
+
+    let msg = match read_message(&mut stream).await {
+        Ok(m) => m,
+        Err(_) => continue,
+    };
+    println!("{:?}", msg);
+   send_message(&mut stream, 2, &[]).await?; 
+loop {
+    let msg = read_message(&mut stream).await?;
+    println!("{:?}", msg);
+    if let PeerMessage::Unchoke = msg {
+        break;
+    }
+}
+println!("Peer unchoked us!");
+
+let payload = build_elrequesto_payload(0, 0, 16384);
+send_message(&mut stream, 6, &payload).await?;
+println!("Requested piece 0, offset 0, length 16384");
+
+let response = read_message(&mut stream).await?;
+println!("{:?}", response);
+
+break; // outer peer loop
 }
 Ok(())
 }
