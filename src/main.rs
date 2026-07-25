@@ -83,14 +83,40 @@ loop {
 }
 println!("Peer unchoked us!");
 
-let payload = build_elrequesto_payload(0, 0, 16384);
-send_message(&mut stream, 6, &payload).await?;
-println!("Requested piece 0, offset 0, length 16384");
+let piece_length = metainfo.piece_length as u32;
+let block_size: u32 = 16384;
+let numnum_blocks = (piece_length + block_size -1) / block_size;
+let mut buffer_piercer = vec![0u8; piece_length as usize];
 
-let response = read_message(&mut stream).await?;
-println!("{:?}", response);
+for block_index in 0..numnum_blocks {
+    let begin = block_index * block_size;
+    let remaining = piece_length - begin;
+    let length = remaining.min(block_size);
+    // going crazy i have no idea what im doing but im doing it
+    // #no_ai_written_frfrrffrfrfr
+    let payload = build_elrequesto_payload(0, begin, length);
+    send_message(&mut stream, 6, &payload).await?;
 
-break; // outer peer loop
+    loop {
+        let msg = read_message(&mut stream).await?;
+        match msg {
+            PeerMessage::Piece(_index, msg_begin, data) => {
+                buffer_piercer[msg_begin as usize .. msg_begin as usize + data.len()]
+                .copy_from_slice(&data);
+                break;
+            }
+            other => println!("ignoring: {:?}", other),
+        }
+    }
+}
+let hash_elcomputed = compute_dem_hash(&buffer_piercer);
+let hash_elexpected = &metainfo.pieces[0..20];
+if hash_elcomputed == hash_elexpected {
+    println!("ONG WE DID THAT SHI, FIRST PIECE VERIFIED BAYBEEEE")
+} else {
+    println!("yo the hashes aint right revise yo shi")
+}
+break;
 }
 Ok(())
 }
