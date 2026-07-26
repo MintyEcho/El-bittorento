@@ -3,6 +3,10 @@
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use std::time::Duration;
+use tokio::time::timeout;
+use std::io::{Seek, SeekFrom, Read};
+use crate::torrent::compute_dem_hash;
 #[derive(Debug)]
 pub enum PeerMessage {
     KeepAlive,
@@ -78,4 +82,90 @@ pub fn build_elrequesto_payload(index_ofdatpiece: u32, begin: u32, length: u32) 
     payload.extend_from_slice(&begin.to_be_bytes());
     payload.extend_from_slice(&length.to_be_bytes());
     payload
+}
+
+pub async fn  connect_and_handshaker(
+   addr_str: &str,
+   hashed_info: &[u8; 20],
+   peer_id: &[u8; 20],
+) -> Result<TcpStream, String> {
+    let mut stream = timeout(Duration::from_secs(5), TcpStream::connect(addr_str))
+    .await
+    .map_err(|_| "Connection timed out".to_string())?
+    .map_err(|e| e.to_string())?;
+
+    let handshake = build_handshake(hashed_info, peer_id);
+    stream.write_all(&handshake).await.map_err(|e| e.to_string())?;
+
+    let mut response = [0u8; 68];
+    stream.read_exact(&mut response).await.map_err(|e| e.to_string())?;
+
+    let peer_info_hash = &response[28..48];
+    if peer_info_hash != hashed_info {
+        return Err("info hash mismatch".to_string());
+    }
+    let msg = read_message(&mut stream).await?;
+    println!("{:?}", msg);
+    
+    send_message(&mut stream, 2, &[]).await?;
+
+    loop {
+        let msg = read_message(&mut stream).await?;
+        println!("{:?}", msg);
+        if let PeerMessage::Unchoke = msg {
+            break
+        }
+    }
+
+    Ok(stream)
+}
+
+
+pub async fn download_elpiece(
+    stream: &mut TcpStream,
+    piece_index: u32,
+    dis_piece_length: u32,
+) -> Result<Vec<u8>, String> {
+    let block_size: u32 = 16384;
+    let numnum_blocks = (dis_piece_length + block_size -1) / block_size;
+    let mut buffer_piercer = vec![0u8; dis_piece_length as usize];
+
+    for block_index in 0..numnum_blocks {
+        let begin = block_index * block_size;
+        let remaining = dis_piece_length - begin;
+        let length = remaining.min(block_size);
+
+        let payload = build_elrequesto_payload(piece_index, begin, length);
+        send_message(stream, 6, &payload).await?;
+
+        loop {
+            let msg = read_message(stream).await?;
+            match msg {
+                PeerMessage::Piece(_index, msg_begin, data) => {
+                    buffer_piercer[msg_begin as usize..msg_begin as usize + data.len()]
+                    .copy_from_slice(&data);
+
+                    break;
+                }
+                other => println!("rn we just ignored: {:?}", other),
+            }
+        }
+    }
+    Ok(buffer_piercer)
+}
+
+pub fn are_we_there_yet(
+    output_file: &mut std::fs::File,
+    piece_start: u64,
+    this_piece_length: u32,
+    hash_elexpected: &[u8],
+) -> bool {
+    let mut buffer = vec![0u8; this_piece_length as usize];
+    if output_file.seek(SeekFrom::Start(piece_start)).is_err() {
+        return false;
+    }
+    match output_file.read_exact(&mut buffer) {
+        Ok(_) => compute_dem_hash(&buffer) == hash_elexpected,
+        Err(_) => false,
+    }
 }
