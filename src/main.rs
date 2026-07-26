@@ -17,6 +17,7 @@ use std::fs::OpenOptions;
 use std::io::{Seek, SeekFrom, Write, Read};
 use download::download_eltorrento;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 
 
@@ -85,6 +86,7 @@ println!("{} of {} pieces remaining", remaining_pieces.len(), num_pieces);
 
 let metainfo_arc = Arc::new(metainfo);
 let output_file_arc = Arc::new(Mutex::new(output_file));
+let completed_pieces = Arc::new(AtomicUsize::new(0));
 
 download_eltorrento(
     peers,
@@ -93,7 +95,10 @@ download_eltorrento(
     *peer_id,
     output_file_arc,
     remaining_pieces,
-    20, // max_concurrent_peers
+    20, 
+    completed_pieces,
+    num_pieces,
 ).await;
+println!("we done frfr")
 Ok(())
 }

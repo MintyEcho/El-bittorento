@@ -105,13 +105,12 @@ pub async fn  connect_and_handshaker(
         return Err("info hash mismatch".to_string());
     }
     let msg = read_message(&mut stream).await?;
-    println!("{:?}", msg);
     
     send_message(&mut stream, 2, &[]).await?;
 
     loop {
         let msg = read_message(&mut stream).await?;
-        println!("{:?}", msg);
+
         if let PeerMessage::Unchoke = msg {
             break
         }
@@ -147,8 +146,8 @@ pub async fn download_elpiece(
 
                     break;
                 }
-                other => println!("rn we just ignored: {:?}", other),
-            }
+                other => other
+            };
         }
     }
     Ok(buffer_piercer)

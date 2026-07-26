@@ -2,8 +2,28 @@ use std::sync::{Arc, Mutex};
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
 use tokio::time::{timeout, Duration};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::torrent::{TorrentMetainfo, compute_dem_hash};
 use crate::peer::{connect_and_handshaker, download_elpiece};
+
+pub fn print_progress_bar(done: usize, total: usize) {
+    let bar_width = 30;
+    let filled = (done * bar_width) / total.max(1);
+    let empty = bar_width - filled;
+
+    let percent = (done * 100) / total.max(1);
+
+    print!(
+        "\r[{}{}] {}% ({}/{})",
+        "#".repeat(filled),
+        "-".repeat(empty),
+        percent,
+        done,
+        total
+    );
+    std::io::stdout().flush().unwrap();
+}
+
 
 pub async fn download_eltorrento(
     peers: Vec<(String, u16)>,
@@ -13,6 +33,8 @@ pub async fn download_eltorrento(
     output_file: Arc<Mutex<File>>,
     remaining_pisces: Vec<usize>,
     max_peers_arrasametime: usize,
+    completed_pieces: Arc<AtomicUsize>,
+    total_pieces: usize,
 ) {
     let kyuu = Arc::new(Mutex::new(remaining_pisces));
     let peer_pool = Arc::new(Mutex::new(peers));
@@ -23,6 +45,7 @@ pub async fn download_eltorrento(
         let peer_pool = Arc::clone(&peer_pool);
         let metainfoe = Arc::clone(&metainfoe);
         let output_file = Arc::clone(&output_file);
+        let completed_pieces = Arc::clone(&completed_pieces);
 
         let handle = tokio::spawn(async move {
             'peer_loop: loop {
@@ -36,12 +59,10 @@ pub async fn download_eltorrento(
                     None => break 'peer_loop,
                 };
                 let addr_str = format!("{}:{}", ip, port);
-                println!("alr so we trying {}", addr_str);
 
                 let mut stream = match connect_and_handshaker(&addr_str, &hashed_infoe, &peer_id).await {
                     Ok(s) => s,
                     Err(e) => {
-                        println!("alr we're skipping peer {addr_str} cuh of {e}");
                         continue 'peer_loop; //yk look for another address
                     }
                 };
@@ -69,12 +90,10 @@ pub async fn download_eltorrento(
                     ).await {
                         Ok(Ok(buffa)) => buffa,
                         Ok(Err(e)) => {
-                            println!("piece {piece_indeks} failed cuz {e}, dropping this connection");
                             kyuu.lock().unwrap().insert(0, piece_indeks);
                             continue 'peer_loop;
                     }
                      Err(_) => {
-                            println!("piece {piece_indeks} timed out, dropping this connection");
                             kyuu.lock().unwrap().insert(0, piece_indeks);
                             continue 'peer_loop;
                         }
@@ -82,7 +101,6 @@ pub async fn download_eltorrento(
 
                 let computed = compute_dem_hash(&buffer);
                     if computed != hash_elexpected {
-                        println!("Piece {piece_indeks} got the wrong hash bro!");
                         kyuu.lock().unwrap().insert(0, piece_indeks);
                         continue 'peer_loop;
                     }
@@ -93,7 +111,8 @@ pub async fn download_eltorrento(
                         file.write_all(&buffer).unwrap();
                     }
 
-                    println!("alr piece {piece_indeks} is done verified and written frfr (via {addr_str})");
+                   let done = completed_pieces.fetch_add(1, Ordering::SeqCst) + 1; // +1 since fetch_add returns the OLD value
+                    print_progress_bar(done, total_pieces);
                 }
             }
         });
