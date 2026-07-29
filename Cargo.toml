@@ -3,6 +3,10 @@ name = "El-bittorento"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "mintorrent"
+path = "src/main.rs"
+
 [dependencies]
 reqwest = "0.13.4"
 sha1 = "0.11.0"

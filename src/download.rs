@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::torrent::{TorrentMetainfo, compute_dem_hash};
 use crate::peer::{connect_and_handshaker, download_elpiece};
 
+//funny thing for user and stuff hehe so funny sudo pacman im so arch linux i need me a fedora execute me
 pub fn print_progress_bar(done: usize, total: usize) {
     let bar_width = 30;
     let filled = (done * bar_width) / total.max(1);
@@ -24,7 +25,17 @@ pub fn print_progress_bar(done: usize, total: usize) {
     std::io::stdout().flush().unwrap();
 }
 
+//genuine BEHEMOTH OF A FUNCTION. but we gon explain it because its genuinley important...
+//even though im gonna rewrite a big part of it for the multi file downloads sake. but we ballin
 
+
+//  IMPORTANT TO UNDERSTAND SINCE IT ISNT COMMON KNOWLEDGE:
+// this function relies heavily on Arc and Mutex.
+// Arc is a smart pointer system which allows sharing of data between multiple threads
+// so basically all the workers can have access to the vector at the same time no problem.
+//and mutex allow exclusive ownership of values inside. so we can lock a value from there so -
+// only one worker has access to it. which basically takes out the ability of 2 workers reaching out
+// to the same peer at the same time. hope you understand
 pub async fn download_eltorrento(
     peers: Vec<(String, u16)>,
     metainfoe: Arc<TorrentMetainfo>,
@@ -36,10 +47,11 @@ pub async fn download_eltorrento(
     completed_pieces: Arc<AtomicUsize>,
     total_pieces: usize,
 ) {
+    // kyuu here is basically a queue arch-mutex vector.
     let kyuu = Arc::new(Mutex::new(remaining_pisces));
     let peer_pool = Arc::new(Mutex::new(peers));
     let mut handles = vec![];
-
+    //arrasametime frfr
     for _ in 0..max_peers_arrasametime {
         let kyuu = Arc::clone(&kyuu);
         let peer_pool = Arc::clone(&peer_pool);
@@ -56,7 +68,7 @@ pub async fn download_eltorrento(
                 };
                 let (ip, port) = match next_pourus {
                     Some(p) => p,
-                    None => break 'peer_loop,
+                    None => break 'peer_loop, //yeah we done
                 };
                 let addr_str = format!("{}:{}", ip, port);
 
@@ -76,7 +88,8 @@ pub async fn download_eltorrento(
                         Some(i) => i,
                         None => return, //all pieces done, so worker just die
                     };
-
+                    //so...from previous commits...this...existed for alot...
+                    // im too lazy to explain what it is though
                     let piece_length = metainfoe.piece_length as u32;
                     let total_length = metainfoe.length as u64;
                     let piece_start = piece_indeks as u64 * piece_length as u64;
@@ -123,3 +136,5 @@ pub async fn download_eltorrento(
         let _ = handle.await;
     }
 }
+
+//i have a love hate relationship with this file.
