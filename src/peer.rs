@@ -183,20 +183,6 @@ pub async fn download_elpiece(
     Ok(buffer_piercer)
 }
 
-//this is the annoying function that's like a child will keep on asking
-// are we there yet? did i get a buffer? is it done? aldjsa;lif;sadfj;saldjf
-pub fn are_we_there_yet(
-    output_file: &mut std::fs::File,
-    piece_start: u64,
-    this_piece_length: u32,
-    hash_elexpected: &[u8],
-) -> bool {
-    let mut buffer = vec![0u8; this_piece_length as usize];
-    if output_file.seek(SeekFrom::Start(piece_start)).is_err() {
-        return false;
-    }
-    match output_file.read_exact(&mut buffer) {
-        Ok(_) => compute_dem_hash(&buffer) == hash_elexpected,
-        Err(_) => false,
-    }
-}
+
+// deleted this function becaue it just wont work with multiple files. 
+// please refer to filemangera.rs for file management functions.
