@@ -130,15 +130,20 @@ pub async fn  connect_and_handshaker(
     
     //then we send the funny message
     send_message(&mut stream, 2, &[]).await?;
-    //then wait till we get an unchoke.
+    //then wait till we get an unchoke but this time with a timeout 
+    let mut unchoke_attempts = 0;
     loop {
         let msg = read_message(&mut stream).await?;
 
         if let PeerMessage::Unchoke = msg {
-            break
+            break;
+        }
+        
+        unchoke_attempts += 1;
+        if unchoke_attempts > 10 {
+            return Err("peer kept us choked for too long".to_string());
         }
     }
-    //still cant get over the js returns
     Ok(stream)
 }
 

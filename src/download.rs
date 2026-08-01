@@ -9,6 +9,15 @@ use sha1::{Sha1, Digest};
 use crate::torrent::{TorrentMetainfo, FileInfo, compute_dem_hash};
 use crate::peer::{connect_and_handshaker, download_elpiece};
 
+// he he macro for debug shi
+macro_rules! dprintln {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            println!($($arg)*);
+        }
+    }
+}
+
 // funny thing for user and stuff hehe so funny sudo pacman im so arch linux i need me a fedora execute me
 pub fn print_progress_bar(done: usize, total: usize) {
     let bar_width = 30;
@@ -171,7 +180,6 @@ impl FileManager {
 }
 
 
-
 pub async fn download_eltorrento(
     peers: Vec<(String, u16)>,
     metainfoe: Arc<TorrentMetainfo>,
@@ -196,19 +204,48 @@ pub async fn download_eltorrento(
 
         let handle = tokio::spawn(async move {
             'peer_loop: loop {
+                let work_left = {
+                    let q = kyuu.lock().unwrap();
+                    !q.is_empty()
+                };
+                
+                if !work_left {
+                    dprintln!("\nDEBUG: All pieces downloaded! Worker exiting happily.");
+                    break 'peer_loop;
+                }
+
                 let next_pourus = {
                     let mut pool = peer_pool.lock().unwrap();
                     pool.pop()
                 };
+
                 let (ip, port) = match next_pourus {
                     Some(p) => p,
-                    None => break 'peer_loop,
+                    None => {
+                        dprintln!("\nDEBUG: Peer pool is empty. Waiting for peers to free up...");
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        continue 'peer_loop;
+                    }
                 };
+                
                 let addr_str = format!("{}:{}", ip, port);
 
-                let mut stream = match connect_and_handshaker(&addr_str, &hashed_infoe, &peer_id).await {
-                    Ok(s) => s,
-                    Err(_) => continue 'peer_loop,
+                let mut stream = match tokio::time::timeout(
+                    std::time::Duration::from_secs(5), 
+                    connect_and_handshaker(&addr_str, &hashed_infoe, &peer_id)
+                ).await {
+                    Ok(Ok(s)) => {
+                        dprintln!("\nDEBUG: Successfully connected to {}!", addr_str);
+                        s
+                    }, 
+                    Ok(Err(e)) => {
+                        dprintln!("\nDEBUG: Rejected peer {}: {}", addr_str, e);
+                        continue 'peer_loop; 
+                    },
+                    Err(_) => {
+                        dprintln!("\nDEBUG: Timeout connecting to {}", addr_str);
+                        continue 'peer_loop; 
+                    }
                 };
 
                 loop {
@@ -216,13 +253,14 @@ pub async fn download_eltorrento(
                         let mut qyuyu = kyuu.lock().unwrap();
                         qyuyu.pop()
                     };
+                    
                     let piece_indeks = match piece_indeks {
                         Some(i) => i,
-                        None => return,
+                        None => return, 
                     };
 
                     let piece_length = metainfoe.piece_length as u32;
-                    let total_length = metainfoe.total_length as u64; // <-- FIXED: was .length
+                    let total_length = metainfoe.total_length as u64;
                     let piece_start = piece_indeks as u64 * piece_length as u64;
                     let remaining_total = total_length - piece_start;
                     let dis_piece_length = remaining_total.min(piece_length as u64) as u32;
@@ -232,21 +270,31 @@ pub async fn download_eltorrento(
                         std::time::Duration::from_secs(15),
                         download_elpiece(&mut stream, piece_indeks as u32, dis_piece_length)
                     ).await {
-                        Ok(Ok(buffa)) => buffa,
-                        Ok(Err(_)) | Err(_) => {
+                        Ok(Ok(buffa)) => {
+                            dprintln!("\nDEBUG: Successfully downloaded piece {}!", piece_indeks);
+                            buffa
+                        },
+                        Ok(Err(e)) => {
+                            dprintln!("\nDEBUG: download_elpiece failed for piece {}: {}", piece_indeks, e);
                             kyuu.lock().unwrap().insert(0, piece_indeks);
-                            continue 'peer_loop;
+                            continue 'peer_loop; 
+                        }
+                        Err(_) => {
+                            dprintln!("\nDEBUG: Timeout downloading piece {}!", piece_indeks);
+                            kyuu.lock().unwrap().insert(0, piece_indeks);
+                            continue 'peer_loop; 
                         }
                     };
 
                     let computed = compute_dem_hash(&buffer);
                     if computed != *hash_elexpected {
+                        dprintln!("\nDEBUG: Hash mismatch on piece {}! Bad peer.", piece_indeks);
                         kyuu.lock().unwrap().insert(0, piece_indeks);
                         continue 'peer_loop;
                     }
 
                     if let Err(e) = file_manager.write_piece(piece_indeks, &buffer) {
-                        eprintln!("Failed to write piece {}: {}", piece_indeks, e);
+                        eprintln!("\nFailed to write piece {}: {}", piece_indeks, e);
                         kyuu.lock().unwrap().insert(0, piece_indeks);
                         continue 'peer_loop;
                     }
