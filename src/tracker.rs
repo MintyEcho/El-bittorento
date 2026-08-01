@@ -2,6 +2,7 @@
 
 use crate::bencode::{BencodeValue, parsdat, get_eldict_value, stringiparser};
 use crate::torrent::{TorrentMetainfo, parse_eltorrento, infoget, compute_dem_hash};
+use std::time::Duration;
 
 //those bytes aint gonna be good so we do them in percent encoding
 pub fn urlencode_bytes(input: &[u8]) -> String {
@@ -24,10 +25,19 @@ pub fn urlencode_bytes(input: &[u8]) -> String {
 //this is the peer reach out function. we make a simple reqwest client and just send a normal
 //get request to the pre-made URL "refer to main to see how we form it". 
 pub async fn get_peers(url: &str) -> Result<Vec<(String, u16)>, String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+    .timeout(Duration::from_secs(10)) // Don't hang forever!
+    .build()
+    .map_err(|e| format!("i failed to build reqwest client: {}", e))?;
 
-    let res = client.get(url).send().await.map_err(|e| e.to_string())?
-        .bytes().await.map_err(|e| e.to_string())?;
+    let res = client.get(&*url)
+        .header("User-Agent", "mintorrent/1.0") // The disguise!
+        .send()
+        .await
+        .map_err(|e| format!("we failed to send request: {}", e))?
+        .bytes()
+        .await
+        .map_err(|e| format!("we failed to read response bytes: {}", e))?;
     
     // since its a really big dictionary and we only want the first dictionary inside,
     //so we just extract it and we can assign the second value to an empty variable using "_"

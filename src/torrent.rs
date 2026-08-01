@@ -21,9 +21,35 @@ pub fn parse_eltorrento(value: &BencodeValue) -> Result<TorrentMetainfo, String>
         return Err("gimme a dictionary in the top level fucking dumdum".to_string());
     };
 
-    let announce = match get_eldict_value(top, "announce") {
+        // 1. Extract the primary announce
+    let raw_announce = match get_eldict_value(top, "announce") {
         Some(BencodeValue::Bytes(b)) => String::from_utf8_lossy(b).to_string(),
         _ => return Err("i aint see no announce. or that shi might be ass'".to_string()),
+    };
+
+    // 2. THE UDP BYPASS: If it's UDP, hunt for an HTTP backup!
+    let announce = if raw_announce.starts_with("udp://") {
+        let mut http_announce = raw_announce.clone(); // Fallback just in case
+        
+        if let Some(BencodeValue::List(announce_list)) = get_eldict_value(top, "announce-list") {
+            'outer: for tier in announce_list {
+                if let BencodeValue::List(tier_list) = tier {
+                    for tracker in tier_list {
+                        if let BencodeValue::Bytes(b) = tracker {
+                            let url = String::from_utf8_lossy(b).to_string();
+                            if url.starts_with("http://") || url.starts_with("https://") {
+                                http_announce = url;
+                                break 'outer; // We found an HTTP tracker! Stop searching.
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        http_announce
+    } else {
+        // It's already HTTP/HTTPS, just use it!
+        raw_announce
     };
 
     let BencodeValue::Dict(info) = get_eldict_value(top, "info")

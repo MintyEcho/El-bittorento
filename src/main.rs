@@ -94,7 +94,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let encoded_peer = urlencode_bytes(peer_id);
 
     // but you cant be vegeta
-    let client = reqwest::Client::new();
     let url = format!(
         "{}?info_hash={}&peer_id={}&port=6881&uploaded=0&downloaded=0&left={}&compact=1",
         metainfo.announce,
